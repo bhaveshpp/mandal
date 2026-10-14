@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+
+  <header class="app-header">
+    <div class="app-header__bar">
+      <h1 class="app-title">અભરામપરા વ્યાસ પરિવાર</h1>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-md px-4 pb-16 pt-6">
+    <section class="card" style="padding:1.25rem">
+      <h2 class="text-xl font-bold">લોગિન / Login</h2>
+      <p class="mt-1 text-sm" style="color:rgba(20,48,43,.7)">
+        તમારો નોંધાયેલ મોબાઇલ નંબર અને પાસવર્ડ લખો.<br>
+        Enter your registered mobile number and password.
+      </p>
+
+      <form id="loginForm" class="mt-5 space-y-4" novalidate>
+        <div>
+          <label for="loginMobile" class="lbl">મોબાઇલ નંબર / Mobile Number</label>
+          <input id="loginMobile" class="field" type="tel" inputmode="numeric" autocomplete="username"
+                 maxlength="14" placeholder="10-digit mobile number" required>
+        </div>
+        <div>
+          <label for="loginPassword" class="lbl">પાસવર્ડ / Password</label>
+          <div class="relative">
+            <input id="loginPassword" class="field" style="padding-right:6rem" type="password"
+                   autocomplete="current-password" placeholder="Your password" required>
+            <button type="button" data-toggle="loginPassword"
+                    class="absolute inset-y-0 right-0 px-3 text-sm font-medium"
+                    style="color:rgba(20,48,43,.7);background:none;border:0;cursor:pointer">બતાવો / Show</button>
+          </div>
+        </div>
+        <button id="loginBtn" type="submit" class="btn btn-primary w-full">
+          <span data-spin class="spinner hidden"></span>
+          લોગિન / Login
+        </button>
+      </form>
+    </section>
+    <p class="mt-4 text-center text-sm" style="color:rgba(20,48,43,.6)">
+      પાસવર્ડ ભૂલી ગયા? મંડળના વ્યવસ્થાપકનો સંપર્ક કરો.<br>Forgot your password? Contact the admin.
+    </p>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+  const { $, api, saveSession, loadSession, setBusy, toast, showFlash, safeNext, normMobile } = App;
+
+  const params = new URLSearchParams(location.search);
+  const next = safeNext(params.get('next'));      // whitelist → never an open redirect
+
+  // Already logged in → straight to the page they wanted (or home).
+  if (loadSession()) {
+    location.replace(next);
+    return;
+  }
+
+  showFlash();
+  $('loginMobile').focus();
+
+  $('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const mobile = normMobile($('loginMobile').value);
+    const password = $('loginPassword').value;
+
+    if (mobile.length !== 10 || !password) {
+      toast('Enter a 10-digit mobile number and password. / મોબાઇલ અને પાસવર્ડ લખો.', 'error');
+      return;
+    }
+
+    const btn = $('loginBtn');
+    setBusy(btn, true);
+    try {
+      const data = await api('login', { mobile, password });
+      saveSession({ mobile: data.member.mobile, name: data.member.name, role: data.member.role, token: data.token, exp: data.expires });
+      App.flash('Welcome! / સ્વાગત છે!');
+      location.replace(next);
+    } catch (err) {
+      const msg = err.code === 'invalid_credentials'
+        ? 'Invalid Credentials / ખોટો મોબાઇલ અથવા પાસવર્ડ'
+        : err.code === 'too_many_attempts'
+          ? 'Too many wrong attempts. Try again after 15 minutes. / 15 મિનિટ પછી પ્રયત્ન કરો.'
+          : err.message;
+      toast(msg, 'error');
+      setBusy(btn, false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

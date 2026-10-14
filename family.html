@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <header id="appHeader"></header>
+
+  <main class="mx-auto max-w-2xl px-4 pb-32 pt-6">
+
+    <div id="loading" class="card flex items-center gap-3 text-sm" style="color:rgba(20,48,43,.7)">
+      <span class="spinner spinner-lg"></span>
+      લોડ થઈ રહ્યું છે… / Loading your details…
+    </div>
+
+    <div id="error" class="card" hidden style="border-color:rgba(179,38,30,.4);background:#FEF2F2">
+      <p id="errorMsg" class="text-sm" style="color:#B3261E"></p>
+      <button id="retryBtn" type="button" class="btn btn-ghost btn-sm mt-3">ફરી પ્રયત્ન કરો / Try again</button>
+    </div>
+
+    <div id="body" class="space-y-6" hidden>
+
+      <!-- Main member: profile read-only, business editable -->
+      <section class="card">
+        <h2 class="text-sm font-semibold" style="color:rgba(20,48,43,.6)">મુખ્ય સભ્ય / Main Member</h2>
+        <dl class="mt-3 space-y-3">
+          <div>
+            <dt class="text-xs" style="color:rgba(20,48,43,.6)">નામ / Name</dt>
+            <dd id="mName" class="text-lg font-semibold">—</dd>
+          </div>
+          <div>
+            <dt class="text-xs" style="color:rgba(20,48,43,.6)">મોબાઇલ / Mobile</dt>
+            <dd id="mMobile" class="font-medium">—</dd>
+          </div>
+          <div>
+            <dt class="text-xs" style="color:rgba(20,48,43,.6)">સરનામું / Address</dt>
+            <dd id="mAddress" class="pre-line">—</dd>
+          </div>
+        </dl>
+
+        <div class="mt-4 space-y-3 border-t pt-4" style="border-color:var(--line)">
+          <div>
+            <label for="myBusiness" class="lbl">વ્યવસાય / Business</label>
+            <input id="myBusiness" class="field" type="text" maxlength="80" autocomplete="off"
+                   placeholder="e.g. કાપડનો વેપાર / Cloth shop">
+          </div>
+          <div>
+            <label for="myDetails" class="lbl">વ્યવસાયની વિગત / Business Details</label>
+            <textarea id="myDetails" class="field" rows="3" maxlength="500"
+                      placeholder="દુકાનનું નામ, સરનામું, વધારાનો ફોન… / Shop name, address, extra phone…"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- Family -->
+      <section>
+        <div class="mb-3 flex items-baseline justify-between">
+          <h2 class="text-lg font-bold">ઘરના સભ્યો / Family Members</h2>
+          <span id="famCount" class="text-sm" style="color:rgba(20,48,43,.6)"></span>
+        </div>
+        <p id="famEmpty" class="card text-center text-sm" hidden style="border-style:dashed;color:rgba(20,48,43,.7)">
+          હજી કોઈ સભ્ય ઉમેર્યા નથી. નીચેનું બટન દબાવો.<br>
+          No family members yet. Tap the button below to add one.
+        </p>
+        <div id="rows" class="space-y-4"></div>
+        <button id="addBtn" type="button" class="btn mt-4 w-full"
+                style="border:2px dashed var(--turmeric);background:var(--turmeric-soft);color:var(--ink)">
+          + ઘરના સભ્ય ઉમેરો / Add Family Member
+        </button>
+      </section>
+    </div>
+  </main>
+
+  <!-- Sticky save bar -->
+  <div id="saveBar" hidden class="fixed inset-x-0 bottom-0 z-20 border-t bg-white"
+       style="border-color:var(--line);padding-bottom:env(safe-area-inset-bottom)">
+    <div class="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
+      <span id="dirtyNote" hidden class="flex-1 text-sm font-medium" style="color:var(--turmeric-dark)">સાચવવાનું બાકી / Unsaved changes</span>
+      <span id="cleanNote" class="flex-1 text-sm" style="color:rgba(20,48,43,.6)">બધું સાચવેલું છે / All saved</span>
+      <button id="saveBtn" type="button" class="btn btn-primary shrink-0">
+        <span data-spin class="spinner hidden"></span>
+        બધી વિગતો સાચવો / Save All
+      </button>
+    </div>
+  </div>
+
+  <!-- Row template (static markup only; user data is set via .value, never innerHTML) -->
+  <template id="rowTpl">
+    <div class="member-card">
+      <div class="mb-3 flex items-center justify-between">
+        <span class="text-sm font-semibold" style="color:rgba(20,48,43,.7)">સભ્ય / Member</span>
+        <button type="button" data-remove class="btn btn-sm" style="color:var(--danger);background:transparent;min-height:36px">
+          કાઢી નાખો / Remove
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2">
+          <label class="lbl">સભ્યનું નામ / Member Name <span style="color:var(--danger)">*</span></label>
+          <input data-f="name" class="field" type="text" maxlength="80" placeholder="Full name" autocomplete="off">
+        </div>
+        <div>
+          <label class="lbl">સંબંધ / Relation <span style="color:var(--danger)">*</span></label>
+          <select data-f="relation" class="field"></select>
+        </div>
+        <div>
+          <label class="lbl">ઉંમર / Age</label>
+          <input data-f="age" class="field" type="number" inputmode="numeric" min="0" max="120" placeholder="e.g. 32">
+        </div>
+        <div>
+          <label class="lbl">અભ્યાસ / Education</label>
+          <input data-f="education" class="field" type="text" maxlength="80" placeholder="e.g. B.Com" autocomplete="off">
+        </div>
+        <div>
+          <label class="lbl">બ્લડ ગ્રુપ / Blood Group</label>
+          <select data-f="blood" class="field"></select>
+        </div>
+        <div class="col-span-2">
+          <label class="lbl">વ્યવસાય / Business <span style="color:rgba(20,48,43,.5)">(જો હોય તો / if any)</span></label>
+          <input data-f="business" class="field" type="text" maxlength="80" placeholder="e.g. ડાયમંડ વર્ક / Diamond work" autocomplete="off">
+        </div>
+        <div class="col-span-2">
+          <label class="lbl">વ્યવસાયની વિગત / Business Details</label>
+          <textarea data-f="details" class="field" rows="2" maxlength="500"
+                    placeholder="દુકાન/કારખાનાનું નામ, સરનામું… / Shop or workplace, address…"></textarea>
+        </div>
+      </div>
+    </div>
+  </template>
+
+<script>
+(() => {
+  'use strict';
+  const session = App.requireLogin();
+  if (!session) return;
+
+  const { $, call, isAuthError, setBusy, toast, saveSession } = App;
+  App.renderSubHeader($('appHeader'));
+
+  const RELATIONS = [
+    ['Wife', 'પત્ની'], ['Husband', 'પતિ'], ['Son', 'પુત્ર'], ['Daughter', 'પુત્રી'],
+    ['Father', 'પિતા'], ['Mother', 'માતા'], ['Brother', 'ભાઈ'], ['Sister', 'બહેન'],
+    ['Daughter-in-law', 'પુત્રવધૂ'], ['Son-in-law', 'જમાઈ'],
+    ['Grandson', 'પૌત્ર'], ['Granddaughter', 'પૌત્રી'],
+    ['Grandfather', 'દાદા'], ['Grandmother', 'દાદી'], ['Other', 'અન્ય']
+  ];
+  const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+  let dirty = false;
+  App.setDirtyGuard(() => dirty);
+
+  function markDirty(on = true) {
+    dirty = on;
+    $('dirtyNote').hidden = !on;
+    $('cleanNote').hidden = on;
+  }
+
+  /* ----------------------------- family rows ----------------------------- */
+  function fillSelect(sel, options, current) {
+    sel.replaceChildren();
+    options.forEach(([value, label]) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      sel.appendChild(o);
+    });
+    // keep unusual values that already exist in the sheet instead of losing them
+    if (current && !options.some(([v]) => v === current)) {
+      const o = document.createElement('option');
+      o.value = current;
+      o.textContent = current;
+      sel.appendChild(o);
+    }
+    sel.value = current || '';
+  }
+
+  function createRow(d = {}) {
+    const card = $('rowTpl').content.firstElementChild.cloneNode(true);
+    const f = (name) => card.querySelector(`[data-f="${name}"]`);
+
+    fillSelect(f('relation'),
+      [['', 'પસંદ કરો / Select…'], ...RELATIONS.map(([v, gu]) => [v, `${gu} / ${v}`])],
+      d.Relation || '');
+    fillSelect(f('blood'),
+      [['', 'ખબર નથી / Unknown'], ...BLOOD_GROUPS.map((b) => [b, b])],
+      d.Blood_Group || '');
+
+    f('name').value = d.Member_Name || '';
+    f('age').value = d.Age === '' || d.Age == null ? '' : d.Age;
+    f('education').value = d.Education || '';
+    f('business').value = d.Business || '';
+    f('details').value = d.Business_Details || '';
+
+    card.addEventListener('input', () => { card.classList.remove('has-error'); markDirty(); });
+    card.addEventListener('change', () => markDirty());
+    card.querySelector('[data-remove]').addEventListener('click', () => {
+      card.remove();
+      markDirty();
+      refreshMeta();
+    });
+    return card;
+  }
+
+  function refreshMeta() {
+    const n = $('rows').children.length;
+    $('famCount').textContent = n ? String(n) : '';
+    $('famEmpty').hidden = n !== 0;
+  }
+
+  function renderAll(member, family) {
+    $('mName').textContent = member.name || '—';
+    $('mMobile').textContent = member.mobile + (member.mobile2 ? ' · ' + member.mobile2 : '');
+    $('mAddress').textContent = member.address || '—';
+    $('myBusiness').value = member.business || '';
+    $('myDetails').value = member.business_details || '';
+    $('rows').replaceChildren(...(family || []).map(createRow));
+    $('loading').hidden = true;
+    $('error').hidden = true;
+    $('body').hidden = false;
+    $('saveBar').hidden = false;
+    refreshMeta();
+    markDirty(false);
+  }
+
+  $('addBtn').addEventListener('click', () => {
+    const card = createRow();
+    $('rows').appendChild(card);
+    refreshMeta();
+    markDirty();
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.querySelector('[data-f="name"]').focus({ preventScroll: true });
+  });
+  $('myBusiness').addEventListener('input', () => markDirty());
+  $('myDetails').addEventListener('input', () => markDirty());
+
+  /** Returns array for the API, or null if any row is invalid. Fully blank rows are skipped. */
+  function collectFamily() {
+    const out = [];
+    let valid = true;
+    let firstBad = null;
+
+    [...$('rows').children].forEach((card) => {
+      const g = (n) => card.querySelector(`[data-f="${n}"]`).value.trim();
+      const v = {
+        name: g('name'), relation: g('relation'), age: g('age'), education: g('education'),
+        blood: g('blood'), business: g('business'), details: g('details')
+      };
+      card.classList.remove('has-error');
+
+      if (!v.name && !v.relation && !v.age && !v.education && !v.blood && !v.business && !v.details) return;
+
+      const ageNum = v.age === '' ? null : Number(v.age);
+      const badAge = ageNum !== null && (!Number.isInteger(ageNum) || ageNum < 0 || ageNum > 120);
+      if (!v.name || !v.relation || badAge) {
+        valid = false;
+        card.classList.add('has-error');
+        if (!firstBad) firstBad = card;
+        return;
+      }
+      out.push({
+        Member_Name: v.name,
+        Relation: v.relation,
+        Age: ageNum === null ? '' : ageNum,
+        Education: v.education,
+        Blood_Group: v.blood,
+        Business: v.business,
+        Business_Details: v.details
+      });
+    });
+
+    if (!valid) {
+      firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return null;
+    }
+    return out;
+  }
+
+  /* ----------------------------- load & save ----------------------------- */
+  async function load() {
+    $('loading').hidden = false;
+    $('error').hidden = true;
+    $('body').hidden = true;
+    $('saveBar').hidden = true;
+    try {
+      const d = await call('fetch_data');
+      saveSession(Object.assign({}, session, { name: d.member.name }));
+      renderAll(d.member, d.family);
+    } catch (err) {
+      if (isAuthError(err)) return;
+      $('loading').hidden = true;
+      $('error').hidden = false;
+      $('errorMsg').textContent = err.message;
+    }
+  }
+  $('retryBtn').addEventListener('click', load);
+
+  $('saveBtn').addEventListener('click', async () => {
+    const list = collectFamily();
+    if (list === null) {
+      toast('Name and relation are required; age must be 0–120. / નામ અને સંબંધ જરૂરી છે.', 'error');
+      return;
+    }
+    const btn = $('saveBtn');
+    setBusy(btn, true);
+    try {
+      const d = await call('save_family_data', {
+        family_members_array: list,
+        business: $('myBusiness').value.trim(),
+        business_details: $('myDetails').value.trim()
+      });
+      renderAll(d.member, d.family);
+      toast('Data Updated! / વિગતો સાચવાઈ ગઈ!');
+    } catch (err) {
+      if (!isAuthError(err)) toast(err.message, 'error');
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

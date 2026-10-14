@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>સભ્યો મેનેજ · અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <header id="appHeader"></header>
+
+  <main class="mx-auto max-w-2xl px-4 pb-16 pt-5">
+    <h2 class="mb-3 text-xl font-bold">સભ્યો મેનેજ / Manage Members</h2>
+
+    <div class="admin-bar">
+      <input id="q" class="field" style="flex:1;min-width:9rem" type="search" placeholder="શોધો / Search…" autocomplete="off">
+      <select id="filter" class="field" style="width:auto" aria-label="Filter">
+        <option value="all">બધા / All</option>
+        <option value="Active">સક્રિય / Active</option>
+        <option value="Inactive">નિષ્ક્રિય / Inactive</option>
+      </select>
+      <button id="addBtn" type="button" class="btn btn-turmeric btn-sm">＋ સભ્ય ઉમેરો / Add member</button>
+    </div>
+    <p id="count" class="mb-2 text-sm" style="color:rgba(20,48,43,.7)"></p>
+
+    <div id="loading" class="card flex items-center gap-3 text-sm" style="color:rgba(20,48,43,.7)">
+      <span class="spinner spinner-lg"></span> લોડ થઈ રહ્યું છે… / Loading…
+    </div>
+    <div id="error" class="card" hidden style="border-color:rgba(179,38,30,.4);background:#FEF2F2">
+      <p id="errorMsg" class="text-sm" style="color:#B3261E"></p>
+      <button id="retryBtn" type="button" class="btn btn-ghost btn-sm mt-3">ફરી પ્રયત્ન કરો / Try again</button>
+    </div>
+    <div id="list" class="space-y-2"></div>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+  const session = App.requireLogin();
+  if (!session) return;
+
+  const { $, el, call, isAuthError, openModal, setBusy, toast, normMobile } = App;
+  App.renderSubHeader($('appHeader'));
+
+  let members = [];
+
+  function chips(m) {
+    return [
+      m.role === 'Admin' ? el('span', { class: 'chip chip-admin' }, 'અધ્યક્ષ / Admin') : null,
+      m.status === 'Inactive' ? el('span', { class: 'chip chip-off' }, 'નિષ્ક્રિય / Inactive') : null,
+      m.show === 'No' ? el('span', { class: 'chip chip-hide' }, 'છુપાવેલ / Hidden') : null
+    ];
+  }
+
+  function render() {
+    const q = $('q').value.trim().toLowerCase();
+    const f = $('filter').value;
+    const rows = members.filter((m) => (f === 'all' || m.status === f) &&
+      (!q || q.split(/\s+/).every((t) => [m.name, m.mobile, m.mobile2, m.address].join(' ').toLowerCase().indexOf(t) !== -1)));
+    $('count').textContent = rows.length + ' / ' + members.length;
+    $('list').replaceChildren(...(rows.length ? rows.map((m) =>
+      el('button', { type: 'button', class: 'member-card w-full text-left' + (m.status === 'Inactive' ? ' has-error' : ''), style: 'cursor:pointer', onclick: () => openMemberDialog(m) },
+        el('div', { class: 'flex items-start justify-between gap-2' },
+          el('div', { class: 'font-semibold', style: 'overflow-wrap:anywhere' }, m.name || '—'),
+          el('div', { class: 'flex flex-wrap gap-1 justify-end' }, ...chips(m))),
+        el('div', { class: 'text-sm', style: 'color:rgba(20,48,43,.7)' }, [m.mobile, m.mobile2].filter(Boolean).join(' · ')),
+        m.address ? el('div', { class: 'text-sm', style: 'color:rgba(20,48,43,.6);overflow-wrap:anywhere' }, m.address) : null))
+      : [el('p', { class: 'card text-center text-sm' }, 'કોઈ સભ્ય મળ્યા નથી. / No members found.')]));
+  }
+
+  function field(id, label, input) { return [el('label', { class: 'lbl', for: id }, label), input]; }
+
+  function openMemberDialog(m) {
+    const isNew = !m;
+    const self = !isNew && m.mobile === session.mobile;
+    const name = el('input', { id: 'mName', class: 'field', maxlength: '80', autocomplete: 'off' });
+    const mobile = el('input', { id: 'mMobile', class: 'field', type: 'tel', inputmode: 'numeric', maxlength: '14', autocomplete: 'off', placeholder: '10-digit mobile (login)' });
+    const mobile2 = el('input', { id: 'mMobile2', class: 'field', type: 'tel', inputmode: 'numeric', maxlength: '14', autocomplete: 'off', placeholder: 'optional' });
+    const address = el('input', { id: 'mAddress', class: 'field', maxlength: '200', autocomplete: 'off' });
+    const status = el('select', { id: 'mStatus', class: 'field' },
+      el('option', { value: 'Active' }, 'સક્રિય / Active'),
+      el('option', { value: 'Inactive', disabled: self ? true : null }, 'નિષ્ક્રિય / Inactive (લોગિન + ડિરેક્ટરી બંધ / no login, not in directory)'));
+    const show = el('select', { id: 'mShow', class: 'field' },
+      el('option', { value: 'Yes' }, 'હા / Yes'), el('option', { value: 'No' }, 'ના / No (છુપાવો / hide)'));
+    const business = el('input', { id: 'mBusiness', class: 'field', maxlength: '80', autocomplete: 'off' });
+    const details = el('textarea', { id: 'mDetails', class: 'field', maxlength: '500' });
+    const pw = el('input', { id: 'mPw', class: 'field', type: 'text', autocomplete: 'off', placeholder: isNew ? 'ઓછામાં ઓછા ૬ અક્ષર / min 6 characters' : 'ખાલી = બદલશો નહીં / empty = keep current' });
+    const save = el('button', { type: 'submit', class: 'btn btn-primary w-full mt-4' }, el('span', { 'data-spin': '', class: 'spinner hidden' }), 'સેવ / Save');
+    if (m) {
+      name.value = m.name; mobile.value = m.mobile; mobile2.value = m.mobile2; address.value = m.address;
+      status.value = m.status; show.value = m.show; business.value = m.business; details.value = m.business_details;
+    }
+    let close;
+    const form = el('form', { novalidate: true },
+      m && m.role === 'Admin' ? el('p', { class: 'text-sm' }, el('span', { class: 'chip chip-admin' }, 'અધ્યક્ષ / Admin'), ' (ફક્ત શીટમાં બદલાય / changed in the sheet only)') : null,
+      ...field('mName', 'પૂરું નામ / Full name', name),
+      ...field('mMobile', 'મોબાઇલ (લોગિન) / Mobile (login)', mobile),
+      ...field('mMobile2', 'બીજો મોબાઇલ / Second mobile', mobile2),
+      ...field('mAddress', 'સરનામું / Address', address),
+      ...field('mStatus', 'સ્થિતિ / Status', status),
+      ...field('mShow', 'ડિરેક્ટરીમાં બતાવો / Show in directory', show),
+      ...field('mBusiness', 'વ્યવસાય / Business', business),
+      ...field('mDetails', 'વ્યવસાયની વિગત / Business details', details),
+      ...field('mPw', isNew ? 'પાસવર્ડ / Password' : 'નવો પાસવર્ડ (રીસેટ) / New password (reset)', pw),
+      save);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const mob = normMobile(mobile.value), mob2 = normMobile(mobile2.value);
+      if (!name.value.trim()) { toast('નામ લખો / Enter the name.', 'error'); return; }
+      if (mob.length !== 10) { toast('૧૦ આંકડાનો મોબાઇલ લખો / Enter a 10-digit mobile.', 'error'); return; }
+      if (mobile2.value.trim() && mob2.length !== 10) { toast('બીજો મોબાઇલ ૧૦ આંકડાનો હોવો જોઈએ / Second mobile must be 10 digits.', 'error'); return; }
+      if (isNew && pw.value.length < 6) { toast('પાસવર્ડ ઓછામાં ઓછા ૬ અક્ષરનો / Password needs 6+ characters.', 'error'); return; }
+      if (pw.value && pw.value.length < 6) { toast('પાસવર્ડ ઓછામાં ઓછા ૬ અક્ષરનો / Password needs 6+ characters.', 'error'); return; }
+      setBusy(save, true);
+      try {
+        const r = await call('admin_save_member', {
+          old_mobile: m ? m.mobile : '', name: name.value.trim(), member_mobile: mob, mobile2: mobile2.value.trim() ? mob2 : '',
+          address: address.value.trim(), status: status.value, show: show.value,
+          business: business.value.trim(), business_details: details.value.trim(), password: pw.value
+        });
+        close();
+        toast(isNew ? ('સભ્ય ઉમેર્યા / Member added' + (r.hisab_added ? ' · હિસાબ ' + r.hisab_year + ' માં હરોળ ઉમેરી / row added to ' + r.hisab_year + ' hisab' : '')) : 'સેવ થયું / Saved');
+        await load();
+      } catch (err) { if (!isAuthError(err)) toast(err.message, 'error'); setBusy(save, false); }
+    });
+    close = openModal(isNew ? 'નવા સભ્ય / New member' : (m.name || 'સભ્ય'), form);
+    name.focus();
+  }
+
+  async function load() {
+    $('error').hidden = true;
+    try {
+      const d = await call('admin_list_members');
+      members = d.members || [];
+      $('loading').hidden = true;
+      render();
+    } catch (err) {
+      if (isAuthError(err)) return;
+      $('loading').hidden = true;
+      $('error').hidden = false;
+      $('errorMsg').textContent = err.code === 'forbidden'
+        ? 'આ પેજ ફક્ત અધ્યક્ષ માટે છે. / This page is only for the admin.' : err.message;
+      if (err.code === 'forbidden') { $('addBtn').hidden = true; $('retryBtn').hidden = true; }
+    }
+  }
+
+  $('q').addEventListener('input', render);
+  $('filter').addEventListener('change', render);
+  $('addBtn').addEventListener('click', () => openMemberDialog(null));
+  $('retryBtn').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>

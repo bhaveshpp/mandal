@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <header id="appHeader"></header>
+
+  <main class="mx-auto max-w-2xl px-4 pb-16 pt-6">
+    <div id="loading" class="card flex items-center gap-3 text-sm" style="color:rgba(20,48,43,.7)">
+      <span class="spinner spinner-lg"></span>
+      લોડ થઈ રહ્યું છે… / Loading…
+    </div>
+
+    <div id="error" class="card" hidden style="border-color:rgba(179,38,30,.4);background:#FEF2F2">
+      <p id="errorMsg" class="text-sm" style="color:#B3261E"></p>
+      <button id="retryBtn" type="button" class="btn btn-ghost btn-sm mt-3">ફરી પ્રયત્ન કરો / Try again</button>
+    </div>
+
+    <div id="adminBar" class="admin-bar" hidden></div>
+    <article id="rules" class="card space-y-2" hidden style="padding:1.25rem"></article>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+  const session = App.requireLogin();
+  if (!session) return;
+
+  const { $, el, call, isAuthError, openModal, setBusy, toast } = App;
+  App.renderSubHeader($('appHeader'));
+
+  function render(lines) {
+    const box = $('rules');
+    if (!lines.length) {
+      box.replaceChildren(el('p', { class: 'text-sm text-center' }, 'હજી કોઈ નિયમો નથી. / No rules added yet.'));
+      return;
+    }
+    box.replaceChildren(...lines.map((t) => {
+      if (t === '') return el('div', { style: 'height:.5rem' });
+      const centered = /^\|\|.*\|\|$/.test(t.trim());     // "|| જય શ્રી કૃષ્ણ ||" style lines
+      return el('p', { class: 'pre-line' + (centered ? ' text-center font-semibold' : '') }, t);
+    }));
+  }
+
+  function openEditDialog() {
+    const area = el('textarea', { id: 'rulesText', class: 'field', rows: '16', style: 'font-family:inherit;line-height:1.5', placeholder: '|| જય શ્રી કૃષ્ણ ||' });
+    const save = el('button', { type: 'submit', class: 'btn btn-primary w-full mt-4', disabled: true }, el('span', { 'data-spin': '', class: 'spinner hidden' }), 'સેવ / Save');
+    let close;
+    const form = el('form', { novalidate: true },
+      el('p', { class: 'text-sm', style: 'color:rgba(20,48,43,.7)' }, 'દરેક લીટી = એક પંક્તિ. ખાલી લીટી = જગ્યા. લીટી ભૂંસો = નિયમ કાઢી નાખો. / One line per row; a blank line is a gap; delete a line to remove it.'),
+      area, save);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setBusy(save, true);
+      try {
+        await call('admin_save_rules', { lines: area.value.replace(/\r\n?/g, '\n').split('\n') });
+        close();
+        toast('નિયમો સેવ થયા / Rules saved');
+        load();
+      } catch (err) { if (!isAuthError(err)) toast(err.message, 'error'); setBusy(save, false); }
+    });
+    close = openModal('નિયમો સુધારો / Edit rules', form);
+    call('admin_get_rules_raw').then((d) => { area.value = (d.lines || []).join('\n'); save.disabled = false; area.focus(); })
+      .catch((err) => { if (!isAuthError(err)) { toast(err.message, 'error'); close(); } });
+  }
+
+  async function load() {
+    $('loading').hidden = false;
+    $('error').hidden = true;
+    $('rules').hidden = true;
+    try {
+      const d = await call('get_rules');
+      render(Array.isArray(d.lines) ? d.lines : []);
+      const bar = $('adminBar');
+      if (App.isAdmin()) {
+        bar.replaceChildren(el('button', { type: 'button', class: 'btn btn-turmeric btn-sm', onclick: openEditDialog }, '✎ નિયમો સુધારો / Edit rules'));
+        bar.hidden = false;
+      } else { bar.hidden = true; }
+      $('loading').hidden = true;
+      $('rules').hidden = false;
+    } catch (err) {
+      if (isAuthError(err)) return;
+      $('loading').hidden = true;
+      $('error').hidden = false;
+      $('errorMsg').textContent = err.code === 'not_found'
+        ? 'નિયમો હજી ઉમેર્યા નથી. / Rules have not been added yet.' : err.message;
+    }
+  }
+  $('retryBtn').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>

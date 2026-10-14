@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <header id="appHeader"></header>
+
+  <main class="mx-auto max-w-5xl px-4 pb-16 pt-5">
+    <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex-1">
+        <label for="search" class="sr-only">શોધો / Search</label>
+        <input id="search" class="field" type="search" autocomplete="off"
+               placeholder="શોધો: નામ, મોબાઇલ, વ્યવસાય / Search name, mobile, business">
+      </div>
+      <p id="count" class="text-sm font-medium" style="color:rgba(20,48,43,.7)" aria-live="polite"></p>
+    </div>
+
+    <div id="loading" class="card flex items-center gap-3 text-sm" style="color:rgba(20,48,43,.7)">
+      <span class="spinner spinner-lg"></span>
+      લોડ થઈ રહ્યું છે… / Loading members…
+    </div>
+
+    <div id="error" class="card" hidden style="border-color:rgba(179,38,30,.4);background:#FEF2F2">
+      <p id="errorMsg" class="text-sm" style="color:#B3261E"></p>
+      <button id="retryBtn" type="button" class="btn btn-ghost btn-sm mt-3">ફરી પ્રયત્ન કરો / Try again</button>
+    </div>
+
+    <p id="empty" class="card text-center text-sm" hidden style="color:rgba(20,48,43,.7)"></p>
+
+    <div id="list" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" hidden></div>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+  const session = App.requireLogin();
+  if (!session) return;
+
+  const { $, el, call, isAuthError, validMobile, telHref, waHref, matchesQuery } = App;
+  App.renderHomeHeader($('appHeader'));
+
+  let members = [];
+
+  function contactRow(mobile) {
+    const num = validMobile(mobile);
+    if (!num) return null;
+    return el('div', { class: 'flex flex-wrap items-center gap-2' },
+      el('span', { class: 'font-medium', style: 'min-width:6.5rem' }, num),
+      el('a', { class: 'btn btn-call btn-sm', href: telHref(num) }, '📞 કૉલ / Call'),
+      el('a', { class: 'btn btn-wa btn-sm', href: waHref(num), target: '_blank', rel: 'noopener noreferrer' }, '💬 WhatsApp')
+    );
+  }
+
+  function familyBlock(list) {
+    if (!list || !list.length) return null;
+    return el('div', { class: 'mt-3 border-t pt-3', style: 'border-color:var(--line)' },
+      el('p', { class: 'mb-1 text-xs font-semibold', style: 'color:rgba(20,48,43,.6)' }, 'ઘરના સભ્યોનો વ્યવસાય / Family businesses'),
+      el('ul', { class: 'space-y-2 text-sm' },
+        list.map((f) => el('li', null,
+          el('span', { class: 'font-medium' }, f.name || ''),
+          f.relation ? el('span', { style: 'color:rgba(20,48,43,.6)' }, ' (' + f.relation + ')') : null,
+          f.business ? el('span', null, ' — ' + f.business) : null,
+          f.business_details ? el('div', { class: 'pre-line', style: 'color:rgba(20,48,43,.75)' }, f.business_details) : null
+        ))
+      )
+    );
+  }
+
+  function card(m) {
+    const isMe = validMobile(m.mobile) === session.mobile;
+    return el('article', { class: 'member-card' + (isMe ? ' is-me' : '') },
+      el('div', { class: 'flex items-start justify-between gap-2' },
+        el('h3', { class: 'text-lg font-bold leading-snug' }, m.name || '—'),
+        isMe ? el('span', { class: 'rounded px-2 py-0.5 text-xs font-semibold', style: 'background:var(--turmeric-soft);color:var(--turmeric-dark)' }, 'તમે / You') : null
+      ),
+      m.address ? el('p', { class: 'mt-1 text-sm pre-line', style: 'color:rgba(20,48,43,.8)' }, '📍 ' + m.address) : null,
+      (m.business || m.business_details)
+        ? el('div', { class: 'mt-2 text-sm' },
+            el('span', { class: 'text-xs font-semibold', style: 'color:rgba(20,48,43,.6)' }, 'વ્યવસાય / Business'),
+            m.business ? el('div', { class: 'font-semibold' }, m.business) : null,
+            m.business_details ? el('div', { class: 'pre-line', style: 'color:rgba(20,48,43,.8)' }, m.business_details) : null)
+        : null,
+      el('div', { class: 'mt-3 space-y-2' }, contactRow(m.mobile), contactRow(m.mobile2)),
+      familyBlock(m.family_business)
+    );
+  }
+
+  function render() {
+    const q = $('search').value;
+    const shown = members.filter((m) => matchesQuery(m, q));
+    $('list').replaceChildren(...shown.map(card));
+    $('list').hidden = shown.length === 0;
+    $('count').textContent = q.trim()
+      ? shown.length + ' / ' + members.length + ' સભ્યો / members'
+      : members.length + ' સભ્યો / members';
+    const empty = $('empty');
+    empty.hidden = shown.length !== 0;
+    if (!empty.hidden) {
+      empty.textContent = members.length === 0
+        ? 'હજી કોઈ સભ્ય નથી. / No members to show.'
+        : 'કોઈ સભ્ય મળ્યા નથી. / No member matches your search.';
+    }
+  }
+
+  async function load() {
+    $('loading').hidden = false;
+    $('error').hidden = true;
+    $('empty').hidden = true;
+    $('list').hidden = true;
+    try {
+      const d = await call('list_members');
+      members = Array.isArray(d.members) ? d.members : [];
+      $('loading').hidden = true;
+      render();
+    } catch (err) {
+      if (isAuthError(err)) return;
+      $('loading').hidden = true;
+      $('error').hidden = false;
+      $('errorMsg').textContent = err.message;
+    }
+  }
+
+  $('search').addEventListener('input', render);
+  $('retryBtn').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>

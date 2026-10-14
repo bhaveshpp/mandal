@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14302B">
+  <title>અભરામપરા વ્યાસ પરિવાર</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="common.js"></script>
+  <link rel="stylesheet" href="common.css">
+</head>
+
+<body class="min-h-screen bg-paper font-sans text-ink antialiased">
+  <header id="appHeader"></header>
+
+  <main class="mx-auto max-w-5xl px-3 pb-8 pt-4">
+    <h2 id="title" class="mb-3 text-xl font-bold" hidden></h2>
+    <div id="adminBar" class="admin-bar" hidden></div>
+    <div id="editNote" class="edit-note" hidden>✎ સુધારો ચાલુ છે: પીળા ખાનામાં ટેપ કરો અને રકમ લખો. / Edit mode: tap a yellow cell to change the amount.</div>
+
+    <div id="loading" class="card flex items-center gap-3 text-sm" style="color:rgba(20,48,43,.7)">
+      <span class="spinner spinner-lg"></span>
+      લોડ થઈ રહ્યું છે… / Loading…
+    </div>
+
+    <div id="error" class="card" hidden style="border-color:rgba(179,38,30,.4);background:#FEF2F2">
+      <p id="errorMsg" class="text-sm" style="color:#B3261E"></p>
+      <button id="retryBtn" type="button" class="btn btn-ghost btn-sm mt-3">ફરી પ્રયત્ન કરો / Try again</button>
+    </div>
+
+    <div id="notFound" class="card text-center" hidden>
+      <p class="text-lg font-semibold">હિસાબ મળ્યો નથી</p>
+      <p class="mt-1 text-sm" style="color:rgba(20,48,43,.7)">This year's hisab was not found.</p>
+      <a href="home.html" class="btn btn-primary mt-4">← પાછા / Back</a>
+    </div>
+
+    <div id="wrap" class="hisab-wrap" hidden></div>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+  const session = App.requireLogin();
+  if (!session) return;
+
+  const { $, el, call, isAuthError, parseYearParam, planHisab, openModal, setBusy, toast } = App;
+  App.renderSubHeader($('appHeader'));
+
+  const year = parseYearParam(new URLSearchParams(location.search).get('year'));
+  let editMode = false;          // admin only: cells become tappable
+  let current = null;            // last loaded data (for the edit dialogs)
+  let resizeBound = false;
+
+  function showNotFound() {
+    $('loading').hidden = true;
+    $('error').hidden = true;
+    $('wrap').hidden = true;
+    $('title').hidden = true;
+    $('adminBar').hidden = true;
+    $('notFound').hidden = false;
+  }
+
+  /** Header rows stick to the top: each row's `top` = height of the rows above it. */
+  function stickHeaderRows(table) {
+    let top = 0;
+    table.querySelectorAll('thead tr').forEach((tr) => {
+      tr.querySelectorAll('th').forEach((th) => { th.style.top = top + 'px'; });
+      top += tr.getBoundingClientRect().height;
+    });
+  }
+
+  /* ---------------------- admin: change one amount ---------------------- */
+  function openCellDialog(data, plan, rowIdx, c) {
+    const nameCell = String(data.rows[rowIdx][plan.sticky - 1] || '').trim();
+    const dateCell = String(data.rows[0][c] || '').trim();
+    const label = String((data.rows[2] || [])[c] || '').replace(/\s+/g, ' ').trim();
+    const cur = data.edit.values[rowIdx][c];
+    const input = el('input', { id: 'amt', class: 'field', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0',
+      value: cur === '' ? '' : String(cur), style: 'font-size:1.4rem;font-weight:700' });
+    const save = el('button', { type: 'submit', class: 'btn btn-primary w-full mt-4' }, el('span', { 'data-spin': '', class: 'spinner hidden' }), 'સેવ / Save');
+    let close;
+    async function send(amount) {
+      setBusy(save, true);
+      try {
+        await call('admin_save_hisab_cell', {
+          year: Number(year), row: data.edit.rows[rowIdx], col: data.edit.cols[c], amount,
+          expect_name: nameCell, expect_old: String(data.rows[rowIdx][c])
+        });
+        close();
+        toast('સેવ થયું / Saved');
+        await load();
+      } catch (err) {
+        if (isAuthError(err)) return;
+        toast(err.message, 'error');
+        setBusy(save, false);
+        if (err.code === 'conflict') { close(); load(); }
+      }
+    }
+    const form = el('form', { novalidate: true },
+      el('p', { class: 'text-sm', style: 'color:rgba(20,48,43,.7)' }, [dateCell, label].filter(Boolean).join(' · ')),
+      el('label', { class: 'lbl', for: 'amt' }, 'રકમ ₹ / Amount ₹'), input, save,
+      el('div', { class: 'mt-3 grid grid-cols-2 gap-3' },
+        el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => send(0) }, '૦ કરો / Set 0'),
+        el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => send('') }, 'ખાલી કરો / Clear')));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const raw = input.value.replace(/[,₹\s]/g, '');
+      const n = raw === '' ? '' : Number(raw);
+      if (n !== '' && (!isFinite(n) || n < 0)) { toast('સાચી રકમ લખો / Enter a valid amount.', 'error'); return; }
+      send(n);
+    });
+    close = openModal(nameCell || 'સભ્ય', form);
+    input.focus(); input.select();
+  }
+
+  /* ---------------------- admin: add a meeting column ---------------------- */
+  function openMeetingDialog() {
+    const now = new Date();
+    const def = String(now.getFullYear()) === year ? now.toISOString().slice(0, 10) : year + '-01-12';
+    const date = el('input', { id: 'mDate', class: 'field', type: 'date', value: def, min: year + '-01-01', max: year + '-12-31' });
+    const host = el('input', { id: 'mHost', class: 'field', maxlength: '60', placeholder: 'યજમાન / Host (optional)' });
+    const save = el('button', { type: 'submit', class: 'btn btn-primary w-full mt-4' }, el('span', { 'data-spin': '', class: 'spinner hidden' }), 'ઉમેરો / Add');
+    let close;
+    const form = el('form', { novalidate: true },
+      el('label', { class: 'lbl', for: 'mDate' }, 'તારીખ / Date'), date,
+      el('label', { class: 'lbl', for: 'mHost' }, 'યજમાન / Host'), host, save);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!date.value) { toast('તારીખ પસંદ કરો / Choose a date.', 'error'); return; }
+      setBusy(save, true);
+      try {
+        const r = await call('admin_add_meeting', { year: Number(year), date: date.value, host: host.value.trim() });
+        close();
+        toast('નવું મંડળ ઉમેર્યું / Meeting ' + r.meeting_no + ' added');
+        await load();
+      } catch (err) { if (!isAuthError(err)) toast(err.message, 'error'); setBusy(save, false); }
+    });
+    close = openModal('નવું મંડળ / New meeting', form);
+  }
+
+  function renderAdminBar(data) {
+    const bar = $('adminBar');
+    if (!App.isAdmin() || !data.edit) { bar.hidden = true; $('editNote').hidden = true; return; }
+    bar.replaceChildren(
+      el('button', { type: 'button', class: 'btn btn-sm ' + (editMode ? 'btn-turmeric' : 'btn-ghost'), onclick: () => { editMode = !editMode; draw(); } },
+        editMode ? '✓ પૂરું / Done' : '✎ સુધારો / Edit'),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: openMeetingDialog }, '＋ નવું મંડળ / New meeting'));
+    bar.hidden = false;
+    $('editNote').hidden = !editMode;
+  }
+
+  /* ------------------------------ the table ------------------------------ */
+  function buildTable(data, plan) {
+    const stickyCls = (c) => (c < plan.sticky ? ' sticky-' + c : '');
+    const table = el('table', { class: 'hisab-table' + (plan.hasSerial ? '' : ' no-serial') });
+    const inactive = new Set(data.inactive_rows || []);
+    const edit = editMode && App.isAdmin() ? data.edit : null;
+
+    const thead = el('thead');
+    plan.headCells.forEach((cells) => {
+      thead.appendChild(el('tr', null, cells.map((h) =>
+        el('th', {
+          class: (stickyCls(h.col) + (h.col === plan.totalCol ? ' total-col' : '')).trim(),
+          rowspan: h.rowSpan > 1 ? String(h.rowSpan) : null,
+          scope: 'col'
+        }, h.text.trim()))));
+    });
+    table.appendChild(thead);
+
+    const myBody = data.my_row >= data.header_rows ? data.my_row - data.header_rows : -1;
+    const tbody = el('tbody');
+    plan.bodyRows.forEach((r, i) => {
+      const rowIdx = data.header_rows + i;
+      const cls = [r.zero ? 'is-zero' : '', i === myBody ? 'is-me' : '', inactive.has(rowIdx) ? 'is-inactive' : ''].join(' ').trim();
+      tbody.appendChild(el('tr', { class: cls || null, 'aria-current': i === myBody ? 'true' : null },
+        r.cells.map((t, c) => {
+          let extra = '', onclick = null;
+          if (edit && edit.rows[rowIdx] && edit.cols[c]) {
+            if (edit.locked[rowIdx][c]) extra = ' cell-locked';
+            else { extra = ' cell-edit'; onclick = () => openCellDialog(data, plan, rowIdx, c); }
+          }
+          return el('td', {
+            class: (stickyCls(c) + (c >= plan.sticky ? ' num' : '') + (c === plan.totalCol ? ' total-col' : '') + extra).trim(),
+            title: extra.indexOf('cell-locked') >= 0 ? 'ફોર્મ્યુલા / Formula – can only be changed in the sheet' : null,
+            onclick
+          }, t);
+        })));
+    });
+
+    if (plan.total) {
+      tbody.appendChild(el('tr', { class: 'total-row' },
+        plan.total.map((t, c) => el('td', {
+          class: (stickyCls(c) + (c >= plan.sticky ? ' num' : '') + (c === plan.totalCol ? ' total-col' : '')).trim()
+        }, t))));
+    }
+    table.appendChild(tbody);
+    return table;
+  }
+
+  function draw() {
+    const data = current;
+    if (!data) return;
+    const plan = planHisab(data.rows || [], data.header_rows, data.has_total_row);
+    $('title').textContent = data.sheet_name;
+    $('title').hidden = false;
+    document.title = data.sheet_name + ' · ' + App.APP_NAME;
+    renderAdminBar(data);
+
+    const wrap = $('wrap');
+    const keepTop = wrap.scrollTop, keepLeft = wrap.scrollLeft;
+    wrap.replaceChildren();
+    if (!plan.nCols) {
+      wrap.appendChild(el('p', { class: 'p-4 text-sm' }, 'આ વર્ષમાં હજી કોઈ માહિતી નથી. / No data for this year yet.'));
+    } else {
+      const table = buildTable(data, plan);
+      wrap.appendChild(table);
+      $('loading').hidden = true;
+      wrap.hidden = false;
+      stickHeaderRows(table);
+      if (!resizeBound) { resizeBound = true; window.addEventListener('resize', () => { const t = wrap.querySelector('table'); if (t) stickHeaderRows(t); }); }
+      if (keepTop || keepLeft) { wrap.scrollTop = keepTop; wrap.scrollLeft = keepLeft; }
+      else { const mine = table.querySelector('tr.is-me'); if (mine) mine.scrollIntoView({ block: 'nearest' }); }
+    }
+    $('loading').hidden = true;
+    wrap.hidden = false;
+  }
+
+  async function load() {
+    if (!year) { showNotFound(); return; }
+    if (!current) $('loading').hidden = false;
+    $('error').hidden = true;
+    $('notFound').hidden = true;
+    try {
+      current = await call('get_hisab', { year });
+      draw();
+    } catch (err) {
+      if (isAuthError(err)) return;
+      if (err.code === 'not_found' || err.code === 'bad_request') { showNotFound(); return; }
+      $('loading').hidden = true;
+      $('error').hidden = false;
+      $('errorMsg').textContent = err.message;
+    }
+  }
+
+  $('retryBtn').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
